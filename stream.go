@@ -6,6 +6,7 @@ import (
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 )
 
+// A message stream.
 type Stream struct {
 	db  fdb.Database
 	dir directory.DirectorySubspace
@@ -15,6 +16,10 @@ func (stream *Stream) streamKey() (fdb.Key, error) {
 	return stream.dir.PackWithVersionstamp(
 		tuple.Tuple{tuple.IncompleteVersionstamp(0)},
 	)
+}
+
+func (stream *Stream) versionKey() fdb.Key {
+	return stream.dir.Sub("version").FDBKey()
 }
 
 // Emit a message on an open transaction.
@@ -28,7 +33,7 @@ func (stream *Stream) EmitOn(tr fdb.Transaction, message []byte) error {
 
 	tr.SetVersionstampedKey(key, message)
 
-	tr.Add(key, encodeUInt64(1))
+	tr.Add(stream.versionKey(), encodeUInt64(1))
 
 	return nil
 }
@@ -42,4 +47,20 @@ func (stream *Stream) Emit(message []byte) error {
 	})
 
 	return err
+}
+
+// Returns a consumer for this stream with the given id. If the consumer already
+// exist it will continue from where it left off.
+func (stream *Stream) Consumer(id string) (*Consumer, error) {
+	dir, err := stream.dir.CreateOrOpen(stream.db, []string{"consumers", id}, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Consumer{
+		db:            stream.db,
+		dir:           dir,
+		initialCursor: stream.dir.FDBKey(),
+		versionKey:    stream.versionKey(),
+	}, nil
 }
