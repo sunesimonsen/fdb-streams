@@ -72,7 +72,7 @@ func (stream *Stream) Consumer(id string) (*Consumer, error) {
 	return &Consumer{
 		db:         stream.db,
 		dir:        dir,
-		streamDir:  stream.dir,
+		stream:     stream,
 		versionKey: stream.versionKey(),
 	}, nil
 }
