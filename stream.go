@@ -1,6 +1,8 @@
 package streams
 
 import (
+	"hash/fnv"
+
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/directory"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
@@ -8,13 +10,23 @@ import (
 
 // A message stream.
 type Stream struct {
-	db  fdb.Database
-	dir directory.DirectorySubspace
+	db         fdb.Database
+	dir        directory.DirectorySubspace
+	partitions uint32
 }
 
-func (stream *Stream) streamKey() (fdb.Key, error) {
+func hash(text string) uint32 {
+	h := fnv.New32a()
+	h.Write([]byte(text))
+	return h.Sum32()
+}
+
+func (stream *Stream) streamKey(partitionKey string) (fdb.Key, error) {
 	return stream.dir.PackWithVersionstamp(
-		tuple.Tuple{tuple.IncompleteVersionstamp(0)},
+		tuple.Tuple{
+			hash(partitionKey) % stream.partitions,
+			tuple.IncompleteVersionstamp(0),
+		},
 	)
 }
 
@@ -22,11 +34,11 @@ func (stream *Stream) versionKey() fdb.Key {
 	return stream.dir.Sub("version").FDBKey()
 }
 
-// Emit a message on an open transaction.
+// Emit a message on an open transaction in the partition calcualted based on the partitionKey.
 //
 // Notice the message needs to honour the FoundationDB value size limits.
-func (stream *Stream) EmitOn(tr fdb.Transaction, message []byte) error {
-	key, err := stream.streamKey()
+func (stream *Stream) EmitOn(tr fdb.Transaction, partitionKey string, message []byte) error {
+	key, err := stream.streamKey(partitionKey)
 	if err != nil {
 		return err
 	}
@@ -38,12 +50,12 @@ func (stream *Stream) EmitOn(tr fdb.Transaction, message []byte) error {
 	return nil
 }
 
-// Emit a message by opening a new transaction.
+// Emit a message on a new transaction in the partition calcualted based on the partitionKey.
 //
 // Notice the message needs to honour the FoundationDB value size limits.
-func (stream *Stream) Emit(message []byte) error {
+func (stream *Stream) Emit(partitionKey string, message []byte) error {
 	_, err := stream.db.Transact(func(tr fdb.Transaction) (any, error) {
-		return nil, stream.EmitOn(tr, message)
+		return nil, stream.EmitOn(tr, partitionKey, message)
 	})
 
 	return err
@@ -58,9 +70,9 @@ func (stream *Stream) Consumer(id string) (*Consumer, error) {
 	}
 
 	return &Consumer{
-		db:            stream.db,
-		dir:           dir,
-		initialCursor: stream.dir.FDBKey(),
-		versionKey:    stream.versionKey(),
+		db:         stream.db,
+		dir:        dir,
+		streamDir:  stream.dir,
+		versionKey: stream.versionKey(),
 	}, nil
 }

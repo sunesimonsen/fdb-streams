@@ -40,7 +40,8 @@ func (store *Store) Stream(topic string) (*Stream, error) {
 	}
 
 	return &Stream{
-		db:  store.db,
-		dir: dir,
+		db:         store.db,
+		dir:        dir,
+		partitions: 256,
 	}, nil
 }
