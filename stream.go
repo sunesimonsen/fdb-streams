@@ -10,9 +10,11 @@ import (
 
 // A message stream.
 type Stream struct {
-	db         fdb.Database
-	dir        directory.DirectorySubspace
-	partitions uint32
+	db          fdb.Database
+	dir         directory.DirectorySubspace
+	partitions  uint32
+	systemTime  SystemTime
+	idGenerator IdGenerator
 }
 
 func hash(text string) uint32 {
@@ -70,9 +72,11 @@ func (stream *Stream) Consumer(id string) (*Consumer, error) {
 	}
 
 	return &Consumer{
-		db:         stream.db,
-		dir:        dir,
-		stream:     stream,
-		versionKey: stream.versionKey(),
+		db:          stream.db,
+		dir:         dir,
+		stream:      stream,
+		versionKey:  stream.versionKey(),
+		systemTime:  stream.systemTime,
+		idGenerator: stream.idGenerator,
 	}, nil
 }

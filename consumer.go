@@ -7,10 +7,12 @@ import (
 
 // A consumer of a message stream.
 type Consumer struct {
-	db         fdb.Database
-	dir        directory.DirectorySubspace
-	stream     *Stream
-	versionKey fdb.Key
+	db          fdb.Database
+	dir         directory.DirectorySubspace
+	stream      *Stream
+	versionKey  fdb.Key
+	systemTime  SystemTime
+	idGenerator IdGenerator
 }
 
 func (consumer *Consumer) loadCursor(tr fdb.ReadTransaction) (fdb.Key, error) {

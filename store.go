@@ -53,8 +53,10 @@ func (store *Store) Stream(topic string) (*Stream, error) {
 	}
 
 	return &Stream{
-		db:         store.db,
-		dir:        dir,
-		partitions: 256,
+		db:          store.db,
+		dir:         dir,
+		partitions:  256,
+		systemTime:  store.systemTime,
+		idGenerator: store.idGenerator,
 	}, nil
 }
