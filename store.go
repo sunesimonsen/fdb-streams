@@ -6,13 +6,15 @@ import (
 )
 
 type Store struct {
-	db  fdb.Database
-	dir directory.DirectorySubspace
+	db          fdb.Database
+	dir         directory.DirectorySubspace
+	systemTime  SystemTime
+	idGenerator IdGenerator
 }
 
 // NewStore constructs a new stream store with the given FoundationDB instance,
-// a namespace ns the streams are stored under.
-func NewStore(db fdb.Database, ns string) (*Store, error) {
+// a namespace ns the streams are stored under and a list of options.
+func NewStore(db fdb.Database, ns string, opts ...Option) (*Store, error) {
 	dir, err := directory.CreateOrOpen(
 		db,
 		[]string{"fdb-streams", ns, "streams"},
@@ -22,10 +24,21 @@ func NewStore(db fdb.Database, ns string) (*Store, error) {
 		return nil, err
 	}
 
-	return &Store{
-		db:  db,
-		dir: dir,
-	}, nil
+	store := &Store{
+		db:          db,
+		dir:         dir,
+		systemTime:  realClock{},
+		idGenerator: UlidIdGenerator{},
+	}
+
+	for _, opt := range opts {
+		err := opt(store)
+		if err != nil {
+			return store, err
+		}
+	}
+
+	return store, nil
 }
 
 // Opens a stream for the given topic.
