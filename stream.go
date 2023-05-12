@@ -10,11 +10,11 @@ import (
 
 // A message stream.
 type Stream struct {
-	db          fdb.Database
-	dir         directory.DirectorySubspace
-	partitions  uint32
-	systemTime  SystemTime
-	idGenerator IdGenerator
+	db             fdb.Database
+	dir            directory.DirectorySubspace
+	partitionCount uint32
+	systemTime     SystemTime
+	idGenerator    IdGenerator
 }
 
 func hash(text string) uint32 {
@@ -24,9 +24,14 @@ func hash(text string) uint32 {
 }
 
 func (stream *Stream) streamKey(partitionKey string) (fdb.Key, error) {
-	return stream.dir.PackWithVersionstamp(
+	partitionsDir, err := stream.dir.CreateOrOpen(stream.db, []string{"partitions"}, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return partitionsDir.PackWithVersionstamp(
 		tuple.Tuple{
-			hash(partitionKey) % stream.partitions,
+			hash(partitionKey) % stream.partitionCount,
 			tuple.IncompleteVersionstamp(0),
 		},
 	)

@@ -14,7 +14,7 @@ type Store struct {
 
 // NewStore constructs a new stream store with the given FoundationDB instance,
 // a namespace ns the streams are stored under and a list of options.
-func NewStore(db fdb.Database, ns string, opts ...Option) (*Store, error) {
+func NewStore(db fdb.Database, ns string, opts ...StoreOption) (*Store, error) {
 	dir, err := directory.CreateOrOpen(
 		db,
 		[]string{"fdb-streams", ns, "streams"},
@@ -31,18 +31,13 @@ func NewStore(db fdb.Database, ns string, opts ...Option) (*Store, error) {
 		idGenerator: UlidIdGenerator{},
 	}
 
-	for _, opt := range opts {
-		err := opt(store)
-		if err != nil {
-			return store, err
-		}
-	}
+	ApplyStoreOptions(store, opts...)
 
 	return store, nil
 }
 
 // Opens a stream for the given topic.
-func (store *Store) Stream(topic string) (*Stream, error) {
+func (store *Store) Stream(topic string, opts ...StreamOption) (*Stream, error) {
 	dir, err := store.dir.CreateOrOpen(
 		store.db,
 		[]string{topic},
@@ -52,11 +47,15 @@ func (store *Store) Stream(topic string) (*Stream, error) {
 		return nil, err
 	}
 
-	return &Stream{
-		db:          store.db,
-		dir:         dir,
-		partitions:  256,
-		systemTime:  store.systemTime,
-		idGenerator: store.idGenerator,
-	}, nil
+	stream := &Stream{
+		db:             store.db,
+		dir:            dir,
+		partitionCount: 256,
+		systemTime:     store.systemTime,
+		idGenerator:    store.idGenerator,
+	}
+
+	ApplyStreamOptions(stream, opts...)
+
+	return stream, nil
 }
