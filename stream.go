@@ -1,7 +1,9 @@
 package streams
 
 import (
+	"context"
 	"hash/fnv"
+	"strconv"
 
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/directory"
@@ -23,22 +25,31 @@ func hash(text string) uint32 {
 	return h.Sum32()
 }
 
+func (stream *Stream) partitionKey(partition string) (directory.DirectorySubspace, error) {
+	return stream.dir.CreateOrOpen(
+		stream.db,
+		[]string{"partitions", partition},
+		nil,
+	)
+}
+
 func (stream *Stream) streamKey(partitionKey string) (fdb.Key, error) {
-	partitionsDir, err := stream.dir.CreateOrOpen(stream.db, []string{"partitions"}, nil)
+	partition := hash(partitionKey) % stream.partitionCount
+	partitionDir, err := stream.partitionKey(strconv.FormatUint(uint64(partition), 10))
+
 	if err != nil {
 		return nil, err
 	}
 
-	return partitionsDir.PackWithVersionstamp(
+	return partitionDir.PackWithVersionstamp(
 		tuple.Tuple{
-			hash(partitionKey) % stream.partitionCount,
 			tuple.IncompleteVersionstamp(0),
 		},
 	)
 }
 
-func (stream *Stream) versionKey() fdb.Key {
-	return stream.dir.Sub("version").FDBKey()
+func (stream *Stream) signalKey() fdb.Key {
+	return stream.dir.Sub("signal").FDBKey()
 }
 
 // Emit a message on an open transaction in the partition calcualted based on the partitionKey.
@@ -52,7 +63,7 @@ func (stream *Stream) EmitOn(tr fdb.Transaction, partitionKey string, message []
 
 	tr.SetVersionstampedKey(key, message)
 
-	tr.Add(stream.versionKey(), encodeUInt64(1))
+	tr.Add(stream.signalKey(), encodeUInt64(1))
 
 	return nil
 }
@@ -68,20 +79,25 @@ func (stream *Stream) Emit(partitionKey string, message []byte) error {
 	return err
 }
 
-// Returns a consumer for this stream with the given id. If the consumer already
-// exist it will continue from where it left off.
-func (stream *Stream) Consumer(id string) (*Consumer, error) {
-	dir, err := stream.dir.CreateOrOpen(stream.db, []string{"consumers", id}, nil)
+// Consumes the stream with the given message handler.
+//
+// The consumer participates in the given consumer group and continues from the
+// position of the consumer group.
+func (stream *Stream) Consume(ctx context.Context, consumerGroupId string, messageHandler MessageHandler) error {
+	dir, err := stream.dir.CreateOrOpen(stream.db, []string{"consumer-groups", consumerGroupId}, nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return &Consumer{
-		db:          stream.db,
-		dir:         dir,
-		stream:      stream,
-		versionKey:  stream.versionKey(),
-		systemTime:  stream.systemTime,
-		idGenerator: stream.idGenerator,
-	}, nil
+	cg := &consumerGroup{
+		db:             stream.db,
+		id:             stream.idGenerator.NextId(),
+		dir:            dir,
+		stream:         stream,
+		messageHandler: messageHandler,
+		systemTime:     stream.systemTime,
+		idGenerator:    stream.idGenerator,
+	}
+
+	return cg.consume(ctx)
 }
