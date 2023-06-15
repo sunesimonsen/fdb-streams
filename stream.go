@@ -87,12 +87,10 @@ func (stream *Stream) Consume(ctx context.Context, consumerGroupId string, messa
 
 	cg := &consumerGroup{
 		db:             stream.db,
-		id:             stream.idGenerator.NextId(),
+		instanceId:     stream.idGenerator.NextId(),
 		dir:            dir,
 		stream:         stream,
 		messageHandler: messageHandler,
-		systemTime:     stream.systemTime,
-		idGenerator:    stream.idGenerator,
 	}
 
 	return cg.consume(ctx)

@@ -17,12 +17,10 @@ type MessageHandler interface {
 // A consumer of a message stream.
 type consumerGroup struct {
 	db             fdb.Database
-	id             Id
+	instanceId     Id
 	dir            directory.DirectorySubspace
 	stream         *Stream
 	messageHandler MessageHandler
-	systemTime     SystemTime
-	idGenerator    IdGenerator
 	consumers      []consumer
 }
 
@@ -32,7 +30,7 @@ func (cg *consumerGroup) register() error {
 		if err != nil {
 			return nil, err
 		}
-		instanceKey := consumersDir.Sub(cg.id)
+		instanceKey := consumersDir.Sub(cg.instanceId)
 
 		tr.Set(instanceKey, encodeUInt64(0))
 		return tr.Watch(instanceKey), nil
@@ -70,7 +68,7 @@ func (cg *consumerGroup) configurePartitions() error {
 				return nil, err
 			}
 
-			if cg.id != Id(ownerData) {
+			if cg.instanceId != Id(ownerData) {
 				continue
 			}
 
@@ -83,7 +81,7 @@ func (cg *consumerGroup) configurePartitions() error {
 				db:              cg.db,
 				dir:             partitionDir,
 				initialCursor:   initialCursor.FDBKey(),
-				consumerGroupId: cg.id,
+				consumerGroupId: cg.instanceId,
 			})
 		}
 
@@ -125,7 +123,7 @@ func (cg *consumerGroup) startHeartbeat(ctx context.Context) {
 				if err != nil {
 					return nil, err
 				}
-				instanceKey := consumersDir.Sub(cg.id)
+				instanceKey := consumersDir.Sub(cg.instanceId)
 
 				tr.Add(instanceKey, encodeUInt64(1))
 				return nil, nil
