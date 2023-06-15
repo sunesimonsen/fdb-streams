@@ -28,11 +28,12 @@ type consumerGroup struct {
 
 func (cg *consumerGroup) register() error {
 	result, err := cg.db.Transact(func(tr fdb.Transaction) (any, error) {
-		consumersDir, err := cg.dir.CreateOrOpen(tr, []string{"consumers"}, nil)
+		consumersDir, err := createDirectory(tr, cg.dir, "consumers")
 		if err != nil {
 			return nil, err
 		}
 		instanceKey := consumersDir.Sub(cg.id)
+
 		tr.Set(instanceKey, encodeUInt64(0))
 		return tr.Watch(instanceKey), nil
 	})
@@ -48,25 +49,26 @@ func (cg *consumerGroup) configurePartitions() error {
 	cg.consumers = []consumer{}
 
 	_, err := cg.db.Transact(func(tr fdb.Transaction) (any, error) {
-		partitionsDir, err := cg.dir.CreateOrOpen(tr, []string{"partitions"}, nil)
-
+		partitionsDir, err := createDirectory(tr, cg.dir, "partitions")
 		if err != nil {
 			return nil, err
 		}
 
 		partitionIds, err := partitionsDir.List(tr, []string{})
-
 		if err != nil {
 			return nil, err
 		}
 
 		for _, id := range partitionIds {
-			partitionDir, err := partitionsDir.CreateOrOpen(tr, []string{id}, nil)
+			partitionDir, err := createDirectory(tr, partitionsDir, id)
 			if err != nil {
 				return nil, err
 			}
 
 			ownerData, err := tr.Get(partitionDir.Sub("owner")).Get()
+			if err != nil {
+				return nil, err
+			}
 
 			if cg.id != Id(ownerData) {
 				continue
@@ -109,6 +111,29 @@ func (cg *consumerGroup) waitForStreamSignal() {
 	result.(fdb.FutureNil).BlockUntilReady()
 }
 
+func (cg *consumerGroup) startHeartbeat(ctx context.Context) {
+	done := ctx.Done()
+	pulse := time.Tick(10 * time.Second)
+
+	for {
+		select {
+		case <-done:
+			break
+		case <-pulse:
+			cg.db.Transact(func(tr fdb.Transaction) (any, error) {
+				consumersDir, err := createDirectory(tr, cg.dir, "consumers")
+				if err != nil {
+					return nil, err
+				}
+				instanceKey := consumersDir.Sub(cg.id)
+
+				tr.Add(instanceKey, encodeUInt64(1))
+				return nil, nil
+			})
+		}
+	}
+}
+
 // Consumes the next message on the stream.
 //
 // If the stream is already fully consumed, then the method will wait for the
@@ -140,7 +165,7 @@ func (cg *consumerGroup) consume(ctx context.Context) error {
 		return err
 	}
 
-	// TODO start heartbeat
+	go cg.startHeartbeat(ctx)
 
 	for {
 		if len(cg.consumers) == 0 {

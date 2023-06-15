@@ -26,11 +26,7 @@ func hash(text string) uint32 {
 }
 
 func (stream *Stream) partitionKey(partition string) (directory.DirectorySubspace, error) {
-	return stream.dir.CreateOrOpen(
-		stream.db,
-		[]string{"partitions", partition},
-		nil,
-	)
+	return createDirectory(stream.db, stream.dir, "partitions", partition)
 }
 
 func (stream *Stream) streamKey(partitionKey string) (fdb.Key, error) {
@@ -84,7 +80,7 @@ func (stream *Stream) Emit(partitionKey string, message []byte) error {
 // The consumer participates in the given consumer group and continues from the
 // position of the consumer group.
 func (stream *Stream) Consume(ctx context.Context, consumerGroupId string, messageHandler MessageHandler) error {
-	dir, err := stream.dir.CreateOrOpen(stream.db, []string{"consumer-groups", consumerGroupId}, nil)
+	dir, err := createDirectory(stream.db, stream.dir, "consumer-groups", consumerGroupId)
 	if err != nil {
 		return err
 	}

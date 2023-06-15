@@ -15,11 +15,7 @@ type Store struct {
 // NewStore constructs a new stream store with the given FoundationDB instance,
 // a namespace ns the streams are stored under and a list of options.
 func NewStore(db fdb.Database, ns string, opts ...StoreOption) (*Store, error) {
-	dir, err := directory.CreateOrOpen(
-		db,
-		[]string{"fdb-streams", ns, "streams"},
-		nil,
-	)
+	dir, err := createDirectory(db, directory.Root(), "fdb-streams", ns, "streams")
 	if err != nil {
 		return nil, err
 	}
@@ -38,11 +34,7 @@ func NewStore(db fdb.Database, ns string, opts ...StoreOption) (*Store, error) {
 
 // Opens a stream for the given topic.
 func (store *Store) Stream(topic string, opts ...StreamOption) (*Stream, error) {
-	dir, err := store.dir.CreateOrOpen(
-		store.db,
-		[]string{topic},
-		nil,
-	)
+	dir, err := createDirectory(store.db, store.dir, topic)
 	if err != nil {
 		return nil, err
 	}
